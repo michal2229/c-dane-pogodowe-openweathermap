@@ -4,16 +4,31 @@ using System.IO;
 namespace pogoda {
 	class MainClass {
 		public static void Main (string[] args) {
-			Console.WriteLine ("Program pobierajacy i analizujacy dane pogodowe pochodzace z serwisu openweathermap.org");
+			String city;
+			int days;
+			int okresMin;
+			int cityId;
+			BackgroundTask bt1;
+			System.Threading.Thread t1;
 
-			Console.Write ("Prosze wpisac nazwe miasta (bez polskich znakow): ");
-			String city = Console.ReadLine();
-			Console.Write ("Prosze wpisac liczbe dni, ktore ma obejmowac prognoza <1..16>: ");
-			int days = Int32.Parse(Console.ReadLine());
-			Console.Write ("Prosze wpisac okres sprawdzania pogody [min]: ");
-			int okresMin = Int32.Parse(Console.ReadLine());
+			Console.WriteLine ("Program pobierajacy i analizujacy dane pogodowe pochodzace z serwisu openweathermap.org");	
 
-			int cityId = getCityID (city, "../../dane/city.list.json"); // lista pobrana z http://bulk.openweathermap.org/sample/city.list.json.gz
+			try {
+				Console.Write ("Prosze wpisac nazwe miasta (bez polskich znakow): ");
+				city = Console.ReadLine();
+				Console.Write ("Prosze wpisac liczbe dni, ktore ma obejmowac prognoza <1..16>: ");
+				days = Int32.Parse(Console.ReadLine());
+				Console.Write ("Prosze wpisac okres sprawdzania pogody [min]: ");
+				okresMin = Int32.Parse(Console.ReadLine());
+			} catch {
+				Console.WriteLine ("Bledne dane"); return;
+			}
+
+			try {
+				cityId = getCityID (city, "../../dane/city.list.json"); // lista pobrana z http://bulk.openweathermap.org/sample/city.list.json.gz
+			} catch {
+				Console.WriteLine ("Nie znaleziono bazy miast w folderze /dane/city.list.json"); return;
+			}
 
 			if (cityId == 0) {
 				Console.WriteLine ("Nie mozna znalezc miasta"); return;
@@ -23,8 +38,8 @@ namespace pogoda {
 			Console.WriteLine ("Aby zakonczyc nacisnij enter...");
 
 
-			BackgroundTask bt1 = new BackgroundTask(cityId, days, okresMin);
-			System.Threading.Thread t1 = new System.Threading.Thread(new System.Threading.ThreadStart(bt1.keepChecking));
+			bt1 = new BackgroundTask(cityId, days, okresMin);
+			t1 = new System.Threading.Thread(new System.Threading.ThreadStart(bt1.keepChecking));
 			t1.Start();
 
 			//while (!t1.IsAlive);
@@ -155,7 +170,7 @@ namespace pogoda {
 			file.Close();
 
 			if (line == null || line == String.Empty) {
-				Console.WriteLine ("line == null!");
+				// Console.WriteLine ("line == null!");
 				return 0;
 			} else {
 				c1 = Newtonsoft.Json.JsonConvert.DeserializeObject<City> (line); // deserializacja linii json	
@@ -171,8 +186,7 @@ namespace pogoda {
 
 	/////////// klasa w tle
 
-	public class BackgroundTask
-	{
+	public class BackgroundTask {
 		int cityId;
 		int days;
 		int okresMinut;
@@ -188,32 +202,37 @@ namespace pogoda {
 		{
 			while (true)
 			{
-				String weatherDataJson = MainClass.getForecast (cityId, days);
-				String dataCzas = DateTime.Now.ToString (new System.Globalization.CultureInfo("en-GB")).Replace("/", "-").Replace(" ", "_").Replace(":", "-");
-				System.IO.File.WriteAllText(cityId + "_" + days + "_" + dataCzas + ".json", weatherDataJson);
+				try {
+					String weatherDataJson = MainClass.getForecast (cityId, days);
+					String dataCzas = DateTime.Now.ToString (new System.Globalization.CultureInfo("en-GB")).Replace("/", "-").Replace(" ", "_").Replace(":", "-");
+					System.IO.File.WriteAllText(cityId + "_" + days + "_" + dataCzas + ".json", weatherDataJson);
 
-				string[] fileArray = Directory.GetFiles(Directory.GetCurrentDirectory(), cityId + "_" + days + "_*.json");
+					string[] fileArray = Directory.GetFiles(Directory.GetCurrentDirectory(), cityId + "_" + days + "_*.json");
 
-				Console.Clear ();
+					Console.Clear ();
 
-				foreach (string s in fileArray) {
-					string danePogodoweJson = File.ReadAllText(s);
+					foreach (string s in fileArray) {
+						string danePogodoweJson = File.ReadAllText(s);
 
-					WeatherData danePogodowe = MainClass.getWeatherDataFromJson (danePogodoweJson);
-					Temp srednieTemperatury = MainClass.averageTempDays (danePogodowe);
+						WeatherData danePogodowe = MainClass.getWeatherDataFromJson (danePogodoweJson);
+						Temp srednieTemperatury = MainClass.averageTempDays (danePogodowe);
+						srednieTemperatury = MainClass.convertKelvinToCelsius (srednieTemperatury);
 
-					srednieTemperatury = MainClass.convertKelvinToCelsius (srednieTemperatury);
-
-					double sredniaRoznica = MainClass.averageDelta (srednieTemperatury);
-				
-					string dataPliku = (new System.Text.RegularExpressions.Regex (@"/.*/.+?_.+?_|\.json")).Replace(s, "");
-					Console.WriteLine (dataPliku);
-					Console.WriteLine ("srednie wartosci temperatur: " + srednieTemperatury.ToString());
-					Console.WriteLine ("srednia roznica min-max: " + sredniaRoznica);
-					Console.WriteLine ();
+						double sredniaRoznica = MainClass.averageDelta (srednieTemperatury);
+					
+						string dataPliku = (new System.Text.RegularExpressions.Regex (@"/.*/.+?_.+?_|\.json")).Replace(s, "");
+						Console.WriteLine (dataPliku);
+						Console.WriteLine ("srednie wartosci temperatur: " + srednieTemperatury.ToString());
+						Console.WriteLine ("srednia roznica min-max: " + sredniaRoznica);
+						Console.WriteLine ();
+					}
+					System.Threading.Thread.Sleep(okresMinut*1000*60);
+				} catch {
+					Console.WriteLine ("Brak polaczenia z serwerem");
+					System.Threading.Thread.Sleep(okresMinut*1000);
 				}
 
-				System.Threading.Thread.Sleep(okresMinut*1000*60);
+
 			}
 		}
 	};
